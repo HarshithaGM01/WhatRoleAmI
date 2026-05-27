@@ -1,0 +1,157 @@
+﻿@page "/"
+@using System.Text.Json
+@inject HttpClient Http
+
+<div class="quiz-container">
+    @if (!_submitted)
+    {
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: @((_current + 1) * 10)%"></div>
+        </div>
+        <p class="question-count">@(_current + 1) of @_questions.Count</p>
+        <h2 class="question-text">@_questions[_current].Text</h2>
+        <div class="options">
+            @foreach (var opt in _questions[_current].Options)
+            {
+                <button class="option-btn @(_selected == opt.Value ? "selected" : "")"
+                        @onclick="() => _selected = opt.Value">
+                    @opt.Label
+                </button>
+            }
+        </div>
+        <button class="next-btn" disabled="@(_selected == null)" @onclick="Next">
+            @(_current == _questions.Count - 1 ? "See my results →" : "Next →")
+        </button>
+    }
+    else if (_loading)
+    {
+        <div class="loading">
+            <p>Analyzing your answers...</p>
+        </div>
+    }
+    else if (_results != null)
+    {
+        <h2>Your role matches</h2>
+        @foreach (var r in _results)
+        {
+            <div class="result-card">
+                <div class="result-header">
+                    <span class="emoji">@r.Emoji</span>
+                    <div>
+                        <p class="role">@r.Role</p>
+                        <p class="match">@r.Match% match</p>
+                    </div>
+                </div>
+                <div class="match-bar">
+                    <div class="match-fill" style="width: @r.Match%"></div>
+                </div>
+                <p class="why">@r.Why</p>
+                <div class="skills">
+                    @foreach (var s in r.Skills)
+                    {
+                        <span class="skill-tag">@s</span>
+                    }
+                </div>
+            </div>
+        }
+        <button class="next-btn" @onclick="Restart">Retake quiz</button>
+    }
+</div>
+
+@code {
+    int _current = 0;
+    string? _selected;
+    bool _submitted = false;
+    bool _loading = false;
+    List<RoleResult>? _results;
+    List<string> _answers = new();
+
+    List<Question> _questions = new()
+    {
+        new("What excites you most on Monday morning?", new() {
+            new("Designing a clean API others will love", "backend"),
+            new("Making a UI feel buttery smooth", "frontend"),
+            new("Figuring out why prod is slow", "devops"),
+            new("Turning messy data into something useful", "data") }),
+        new("Pick your ideal coding environment:", new() {
+            new("Terminal, vim, and silence", "backend"),
+            new("VS Code with live preview open", "frontend"),
+            new("Dashboards and monitoring everywhere", "devops"),
+            new("Jupyter notebook with charts loading", "data") }),
+        new("A bug hits production. You:", new() {
+            new("Check logs and trace the API call chain", "backend"),
+            new("Open DevTools and inspect network requests", "frontend"),
+            new("SSH into the server and check metrics", "devops"),
+            new("Query the database and look for anomalies", "data") }),
+        new("Which superpower sounds most like you?", new() {
+            new("I design systems that never go down", "backend"),
+            new("I make users say wow on first click", "frontend"),
+            new("I can deploy anything, anywhere, fast", "devops"),
+            new("I find patterns nobody else notices", "data") }),
+        new("Your team asks you to pick a tech. You pick:", new() {
+            new("ASP.NET Core + Entity Framework", "backend"),
+            new("React + Tailwind", "frontend"),
+            new("Docker + Kubernetes + Terraform", "devops"),
+            new("SQL + Python + Power BI", "data") }),
+        new("What is your work style?", new() {
+            new("Deep focus, solo problem solving", "backend"),
+            new("Collaborative, lots of design feedback", "frontend"),
+            new("On-call, always ready to respond", "devops"),
+            new("Research-heavy, document everything", "data") }),
+        new("What makes you proudest?", new() {
+            new("An API that handles millions of requests", "backend"),
+            new("A feature users actually enjoy using", "frontend"),
+            new("Zero-downtime deployment pipeline", "devops"),
+            new("A report that changed a business decision", "data") }),
+        new("How do you feel about meetings?", new() {
+            new("Keep them short, I have code to write", "backend"),
+            new("Love design reviews and user feedback sessions", "frontend"),
+            new("Incident retrospectives are actually useful", "devops"),
+            new("I love presenting insights to stakeholders", "data") }),
+        new("Pick a cloud service that excites you most:", new() {
+            new("Azure Functions / API Management", "backend"),
+            new("Azure Static Web Apps / CDN", "frontend"),
+            new("Azure Kubernetes Service / DevOps Pipelines", "devops"),
+            new("Azure Synapse / Databricks", "data") }),
+        new("You have a free Friday afternoon. You:", new() {
+            new("Refactor something that has been bothering you", "backend"),
+            new("Build a side project with a cool UI", "frontend"),
+            new("Automate something repetitive in your workflow", "devops"),
+            new("Explore a new dataset out of curiosity", "data") }),
+    };
+
+    async Task Next()
+    {
+        if (_selected == null) return;
+        _answers.Add(_questions[_current].Text + ": " + _selected);
+        if (_current + 1 < _questions.Count)
+        {
+            _current++;
+            _selected = null;
+        }
+        else
+        {
+            _submitted = true;
+            _loading = true;
+            var payload = _answers.Select(a => new { question = a, answer = a }).ToList();
+            var response = await Http.PostAsJsonAsync("https://localhost:7077/api/quiz/analyze", payload);
+            var json = await response.Content.ReadAsStringAsync();
+            _results = JsonSerializer.Deserialize<List<RoleResult>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            _loading = false;
+        }
+    }
+
+    void Restart()
+    {
+        _current = 0;
+        _selected = null;
+        _submitted = false;
+        _loading = false;
+        _results = null;
+        _answers = new();
+    }
+
+    record Question(string Text, List<Option> Options);
+    record Option(string Label, string Value);
+    record RoleResult(string Role, int Match, string Why, List<string> Skills, string Emoji);
+}
